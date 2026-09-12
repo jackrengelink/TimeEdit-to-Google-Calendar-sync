@@ -1046,32 +1046,50 @@
         if (e.eventLabelId === defId) grey++;
       });
     } catch (err) {
-      sendMail_('TimeEdit sync monthly check FAILED',
-        'Could not read the calendar: ' + err + '\n');
+      const msg = 'Could not read the calendar: ' + err;
+      sendMail_('TimeEdit sync - monthly check FAILED', msg + '\n',
+        htmlShell_('Monthly check failed',
+          htmlNote_(msg, '#D50000', '#fce8e6'), ''));
       return;
     }
 
     const lastOk = state.lastOk ? new Date(state.lastOk) : null;
     const staleDays = lastOk ? Math.floor((Date.now() - state.lastOk) / 864e5) : null;
 
-    const body = [
-      'Version: ' + SCRIPT_VERSION,
-      'Events tracked: ' + Object.keys(state.events).length,
-      'Feed size at last sync: ' + (state.feedCount || 0),
-      'Deletions remembered: ' + Object.keys(state.tombstones).length,
-      'Last successful sync: ' + (lastOk ? lastOk.toString() : 'never'),
+    const broken = staleDays === null || staleDays > 2;
+    const status = broken
+      ? (staleDays === null
+          ? 'No successful sync has ever completed. Something is wrong.'
+          : 'No successful sync in ' + staleDays + ' days. Something is wrong.')
+      : 'Syncing normally.';
+
+    const rows = [
+      ['Version', SCRIPT_VERSION],
+      ['Events tracked', String(Object.keys(state.events).length)],
+      ['Feed size at last sync', String(state.feedCount || 0)],
+      ['Deletions remembered', String(Object.keys(state.tombstones).length)],
+      ['Last successful sync', lastOk ? lastOk.toString() : 'never'],
+      ['Next 31 days', upcoming + ' events, ' + grey + ' uncategorised'],
+    ];
+
+    const note = updateNote_();
+
+    const text = [
+      textStats_(rows),
       '',
-      'Next 31 days: ' + upcoming + ' events, ' + grey + ' uncategorised',
-      '',
-      staleDays === null || staleDays > 2
-        ? '*** No successful sync in ' + staleDays + ' days. Something is wrong. ***'
-        : 'Syncing normally.',
-      updateNote_(),
+      broken ? '*** ' + status + ' ***' : status,
+      note,
     ].join('\n');
 
-    sendMail_(staleDays === null || staleDays > 2
-      ? 'TimeEdit sync NOT RUNNING'
-      : 'TimeEdit sync monthly check', body + '\n');
+    const html = htmlShell_('Monthly check',
+      htmlNote_(status,
+        broken ? '#D50000' : '#33B679',
+        broken ? '#fce8e6' : '#e6f4ea')
+      + htmlStats_(rows),
+      note ? nl2br_(note.trim()) : '');
+
+    sendMail_(broken ? 'TimeEdit sync - NOT RUNNING'
+                     : 'TimeEdit sync - monthly check', text + '\n', html);
   }
 
   /** Events in the calendar that the script does not track. Report only. */
@@ -1348,9 +1366,8 @@
           updated++; writes++;
         }
 
-        const label = when_(item.start, tz) + '  ' + next.title;
-        if (diffs.length) changes.moved.push(label + '\n    ' + diffs.join('\n    '));
-        if (keptNotes.length) changes.kept.push(label + '\n    ' + keptNotes.join('\n    '));
+        if (diffs.length) changes.moved.push(entry_(next.start, tz, next.title, diffs));
+        if (keptNotes.length) changes.kept.push(entry_(next.start, tz, next.title, keptNotes));
         if ((diffs.length || keptNotes.length) && isUrgent_(rule)) changes.urgent = true;
 
         known[uid] = compact_(res.id, next.start, nextWrote.join('|'), nextFeed);
@@ -1363,8 +1380,8 @@
 
       known[uid] = compact_(made.id, next.start, nextFeed, nextFeed);
       created++; writes++;
-      changes.created.push(when_(item.start, tz) + '  ' + next.title
-        + (next.location ? '  (' + next.location + ')' : ''));
+      changes.created.push(entry_(next.start, tz, next.title,
+        next.location ? [next.location] : []));
       if (isUrgent_(rule)) changes.urgent = true;
       if (++sinceSave >= 50) flush();
     }
@@ -1387,7 +1404,8 @@
         if (start !== null && start < todayMs) { delete known[uid]; return; }
 
         if (res) {
-          changes.cancelled.push(when_(startOf_(res), tz) + '  ' + (res.summary || ''));
+          changes.cancelled.push(entry_(startOf_(res).getTime(), tz,
+            res.summary || '(no title)', res.location ? [res.location] : []));
           if (isUrgentLabel_(res.eventLabelId)) changes.urgent = true;
           apiRemove_(res.id);
           removed++; writes++;
@@ -1760,13 +1778,19 @@
     const fresh = types.filter(t => before.indexOf(t) === -1);
     if (!fresh.length || !cfg_().email.newTypes) return;
 
+    const intro = 'TimeEdit is publishing activity types that no rule in RULES '
+                + 'matches, so these events are showing up grey:';
+    const howTo = 'To colour them, add a line to RULES with a fresh UUID for its '
+                + 'id and a colour in COLORS, then run saveConfig() and '
+                + 'restyleAll(). To ignore them entirely, add the category name '
+                + 'to SKIP_CATEGORIES instead.';
+
+    const rows = fresh.map(t => [t, found[t] + ' events']);
+
     sendMail_('New activity type in your timetable',
-      'TimeEdit is publishing activity types that no rule in RULES matches, so\n'
-    + 'these events are showing up grey:\n\n'
-    + fresh.map(t => '  ' + t + '  (' + found[t] + ' events)').join('\n')
-    + '\n\nTo colour them, add a line to RULES with a fresh UUID for its id and\n'
-    + 'a colour in COLORS, then run restyleAll(). To ignore them entirely, add\n'
-    + 'the category name to SKIP_CATEGORIES instead.\n');
+      intro + '\n\n' + textStats_(rows) + '\n\n' + howTo + '\n',
+      htmlShell_('New activity type in your timetable',
+        htmlParagraph_(intro) + htmlStats_(rows), esc_(howTo)));
   }
 
   // ================================================================
@@ -1799,7 +1823,14 @@
       ? 'Last successful sync: ' + new Date(state.lastOk).toString()
       : 'No successful sync recorded yet.';
 
-    sendMail_('TimeEdit sync stopped', detail + '\n\n' + since + '\n\nReason: ' + reason + '\n');
+    sendMail_('TimeEdit sync stopped',
+      detail + '\n\n' + since + '\n\nReason: ' + reason + '\n',
+      htmlShell_('The sync stopped',
+        htmlNote_(detail, '#D50000', '#fce8e6')
+        + htmlStats_([['Reason', reason], ['Last successful sync',
+            state.lastOk ? new Date(state.lastOk).toString() : 'never']]),
+        'You are getting this because EMAIL.failures is on. '
+      + 'It is the only warning that the sync has stopped.'));
   }
 
   function startOfToday_() {
@@ -1828,41 +1859,183 @@
     }
   }
 
+  // How many entries per section before the rest are summarised as a count.
   const DIGEST_MAX_LINES = 25;
 
-  function sendDigest_(changes, truncated) {
-    const block = (heading, lines) => {
-      if (!lines.length) return null;
-      const shown = lines.slice(0, DIGEST_MAX_LINES).join('\n');
-      const rest = lines.length - DIGEST_MAX_LINES;
-      return heading + '\n' + shown + (rest > 0 ? '\n… and ' + rest + ' more' : '');
+  // Section colour, only used by the HTML body.
+  const DIGEST_SECTIONS = [
+    { key: 'cancelled', title: 'Cancelled', tag: 'cancelled', color: '#D50000' },
+    { key: 'moved',     title: 'Changed',   tag: 'changed',   color: '#FF6F00' },
+    { key: 'kept',      title: 'Changed in TimeEdit, kept as you had it',
+                                            tag: 'kept',      color: '#7986CB' },
+    { key: 'created',   title: 'New',       tag: 'new',       color: '#33B679' },
+  ];
+
+  /** One line of a digest, in a shape both renderers can use. */
+  function entry_(startMs, tz, title, lines) {
+    return {
+      ts: startMs,
+      when: when_(new Date(startMs), tz),
+      title: title,
+      lines: lines || [],
     };
-
-    const blocks = [
-      block('CANCELLED', changes.cancelled),
-      block('CHANGED', changes.moved),
-      block('CHANGED IN TIMEEDIT, NOT IN YOUR CALENDAR', changes.kept),
-      block('NEW', changes.created),
-    ].filter(Boolean);
-
-    if (!blocks.length || !cfg_().email.changes) return;
-
-    let body = blocks.join('\n\n') + '\n';
-    if (truncated) {
-      body += '\nThis run stopped early on its write budget, so this list is '
-            + 'partial. The rest follows in the next sync.\n';
-    }
-
-    // An exam moving matters more than a lecture moving, and the subject line is
-    // all you see on a lock screen.
-    sendMail_(changes.urgent ? 'EXAM CHANGE - schedule updated'
-                            : 'Change in schedule', body);
   }
 
-  function sendMail_(subject, body) {
+  function sendDigest_(changes, truncated) {
+    if (!cfg_().email.changes) return;
+
+    const groups = DIGEST_SECTIONS
+      .map(sec => Object.assign({}, sec, { items: changes[sec.key] }))
+      .filter(g => g.items.length);
+
+    if (!groups.length) return;
+
+    // The feed arrives in whatever order TimeEdit felt like. Chronological is
+    // the only order that makes a digest scannable.
+    groups.forEach(g => g.items.sort((a, b) => a.ts - b.ts));
+
+    // Put the counts in the subject, so the lock screen already tells you
+    // whether this is worth opening.
+    const counts = groups.map(g => g.items.length + ' ' + g.tag).join(', ');
+    const subject = (changes.urgent ? 'EXAM CHANGE - ' : 'Timetable - ') + counts;
+
+    sendMail_(subject, digestText_(groups, truncated), digestHtml_(groups, truncated));
+  }
+
+  const TRUNCATED_NOTE =
+    'This run stopped early on its write budget, so this list is partial. '
+  + 'The rest follows in the next sync.';
+
+  function digestText_(groups, truncated) {
+    const out = [];
+
+    groups.forEach(g => {
+      out.push(g.title.toUpperCase() + '  (' + g.items.length + ')');
+      out.push(repeat_('-', 46));
+
+      g.items.slice(0, DIGEST_MAX_LINES).forEach(it => {
+        out.push(it.when + '   ' + it.title);
+        it.lines.forEach(l => out.push('      ' + l));
+      });
+
+      const rest = g.items.length - DIGEST_MAX_LINES;
+      if (rest > 0) out.push('... and ' + rest + ' more');
+      out.push('');
+    });
+
+    if (truncated) out.push(TRUNCATED_NOTE, '');
+    return out.join('\n');
+  }
+
+  function digestHtml_(groups, truncated) {
+    const body = groups.map(g => {
+      const shown = g.items.slice(0, DIGEST_MAX_LINES).map(it =>
+          '<tr><td style="padding:8px 0;border-top:1px solid #f1f3f4;">'
+        + '<div style="color:#5f6368;font-size:12px;">' + esc_(it.when) + '</div>'
+        + '<div style="font-weight:600;">' + esc_(it.title) + '</div>'
+        + it.lines.map(l =>
+            '<div style="color:#5f6368;font-size:13px;">' + esc_(l) + '</div>').join('')
+        + '</td></tr>').join('');
+
+      const rest = g.items.length - DIGEST_MAX_LINES;
+      const more = rest > 0
+        ? '<tr><td style="padding:8px 0;border-top:1px solid #f1f3f4;color:#5f6368;'
+        + 'font-size:13px;">and ' + rest + ' more</td></tr>'
+        : '';
+
+      return '<div style="margin:20px 0 0;">'
+           + '<div style="font-size:12px;font-weight:700;letter-spacing:.06em;'
+           + 'text-transform:uppercase;color:' + g.color + ';">'
+           + esc_(g.title) + ' &middot; ' + g.items.length + '</div>'
+           + '<table style="width:100%;border-collapse:collapse;">'
+           + shown + more + '</table></div>';
+    }).join('');
+
+    return htmlShell_('Your timetable changed', body,
+      truncated ? esc_(TRUNCATED_NOTE) : '');
+  }
+
+  // ================================================================
+  //  EMAIL RENDERING
+  // ================================================================
+
+  const MAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,"
+                  + "Helvetica,Arial,sans-serif";
+
+  /**
+   * Titles and rooms come straight from TimeEdit, so a course called
+   * "Design & Research" would otherwise break the markup.
+   */
+  function esc_(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function repeat_(ch, n) {
+    let out = '';
+    for (let i = 0; i < n; i++) out += ch;
+    return out;
+  }
+
+  /** Escaped text with newlines turned into breaks. */
+  function nl2br_(text) {
+    return esc_(text).replace(/\n/g, '<br>');
+  }
+
+  /** The frame every HTML mail sits in: heading, body, optional footer note. */
+  function htmlShell_(heading, inner, footer) {
+    return '<div style="font-family:' + MAIL_FONT + ';font-size:14px;'
+         + 'line-height:1.5;color:#202124;max-width:560px;">'
+         + '<div style="font-size:17px;font-weight:700;">' + esc_(heading) + '</div>'
+         + inner
+         + (footer
+             ? '<div style="margin-top:22px;padding-top:12px;'
+             + 'border-top:1px solid #e0e0e0;font-size:12px;color:#5f6368;">'
+             + footer + '</div>'
+             : '')
+         + '</div>';
+  }
+
+  /** A two-column label/value table, for the monthly figures. */
+  function htmlStats_(rows) {
+    return '<table style="width:100%;border-collapse:collapse;margin-top:16px;">'
+         + rows.map(r =>
+             '<tr>'
+           + '<td style="padding:6px 12px 6px 0;border-top:1px solid #f1f3f4;'
+           + 'color:#5f6368;white-space:nowrap;">' + esc_(r[0]) + '</td>'
+           + '<td style="padding:6px 0;border-top:1px solid #f1f3f4;'
+           + 'font-weight:600;">' + esc_(r[1]) + '</td></tr>').join('')
+         + '</table>';
+  }
+
+  /** A coloured callout, for a status line or a failure reason. */
+  function htmlNote_(text, color, background) {
+    return '<div style="margin-top:16px;padding:12px 14px;border-radius:6px;'
+         + 'background:' + background + ';border-left:3px solid ' + color + ';'
+         + 'color:#202124;">' + nl2br_(text) + '</div>';
+  }
+
+  function htmlParagraph_(text) {
+    return '<div style="margin-top:14px;">' + nl2br_(text) + '</div>';
+  }
+
+  /** Plain-text label/value pairs, padded to line up in a monospace view. */
+  function textStats_(rows) {
+    let width = 0;
+    rows.forEach(r => { if (r[0].length > width) width = r[0].length; });
+    return rows.map(r => r[0] + repeat_(' ', width - r[0].length + 2) + r[1]).join('\n');
+  }
+
+  function sendMail_(subject, body, htmlBody) {
     const to = cfg_().notifyEmail || Session.getEffectiveUser().getEmail();
     if (!to) { Logger.log('No email address available; set NOTIFY_EMAIL.'); return; }
-    MailApp.sendEmail({ to: to, subject: subject, body: body });
+
+    const mail = { to: to, subject: subject, body: body };
+    if (htmlBody) mail.htmlBody = htmlBody;
+    MailApp.sendEmail(mail);
   }
 
   /**

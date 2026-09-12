@@ -89,6 +89,12 @@ Calendar ID. Otherwise leave `CALENDAR_ID` empty.
 That is it. If something looks wrong, run `verify()`, it checks the script's
 memory against your calendar and the feed and reports any drift.
 
+### 7. Run `saveConfig()`
+
+Once you are happy with your settings, run `saveConfig()` once. It copies them
+into the project's script properties, which pasting a new version of the file
+does not touch. Without it, upgrading means re-doing your edits by hand.
+
 ### Optional
 
 `syncNow()` only ever touches today onwards. If you set this up mid-term and
@@ -99,9 +105,41 @@ it logs everything it would do and changes nothing.
 
 ---
 
+## Your settings survive a version upgrade
+
+The constants in the file are **defaults**. Anything stored by `saveConfig()`
+wins over them, and lives in script properties rather than in the code, so
+replacing `Code.gs` keeps it.
+
+`setup()` stores your `ICS_URL` and calendar id on its own, before you run
+anything else. Those two always survive. Everything else survives only once you
+have run `saveConfig()`.
+
+> After `saveConfig()`, the stored value is the one in use and editing the
+> constant in the file does nothing until you run `saveConfig()` again.
+> **So after any change you make, run `saveConfig()`.**
+
+`showConfig()` prints what is stored and flags every place it disagrees with the
+code, which is the fastest way to catch a change that did not take.
+
+### Upgrading
+
+1. Paste the new file over `Code.gs`.
+2. Run `showConfig()`. It lists anything the new version added that you are not
+   storing yet.
+3. Run `saveConfig()` if you want those stored too.
+4. Run `installTrigger()` if `SYNC_TIMES` changed.
+
+`resetConfig()` drops the stored settings and goes back to the constants in the
+file. It keeps your timetable link and calendar, since losing those means
+re-doing setup.
+
+---
+
 ## Configuration
 
-All settings live in the `CONFIG` block near the top of `Code.gs`.
+The constants near the top of `Code.gs` are the defaults. See above for how
+storing them works.
 
 ### You must set this
 
@@ -120,21 +158,27 @@ All settings live in the `CONFIG` block near the top of `Code.gs`.
 
 | Setting | What it does |
 | --- | --- |
-| `RULES` | The heart of it. One line per activity type: a name, a pattern matching what TimeEdit calls it, a hex colour, a unique id, and reminders |
-| `DEFAULT_RULE` | What unmatched events look like. Grey is a deliberate "something new appeared" signal |
+| `COLORS` | The colour of each category, keyed by name. Any hex value works, not just Google's eleven presets. This is the one most people change |
+| `REMINDERS` | Popup reminders per category, in minutes before the event. Anything not listed gets none |
+| `RULES` | One line per activity type: a name, a pattern matching what TimeEdit calls it, and a unique id. Colour and reminders come from the two tables above |
+| `DEFAULT_RULE_NAME` / `DEFAULT_RULE_ID` | The catch-all for unmatched events. Grey is a deliberate "something new appeared" signal |
 | `EXTRA_RULES` | TimeEdit dumps a lot under the type "Other" and hides the real category in the description's `Extra Info:` line. These read that line |
 | `TITLE_RULES` | Last resort for "Other" events with no Extra Info: match the course title instead |
 | `URGENT_RULES` | Which categories make the change email shout |
-| `SKIP_TYPES` | Types to never create at all. The commented example drops the holiday markers |
+| `SKIP_CATEGORIES` | Category names to never create at all, e.g. `['Self-study', 'Holiday']` |
+| `SKIP_TYPES` | Raw patterns, for anything a category name cannot express. Most people do not need this |
 
-**Adding a rule.** Copy a line, change the name, pattern and colour, and give it
-a **new** id — generate one at [uuidgenerator.net](https://www.uuidgenerator.net).
-Then run `restyleAll()`.
+**Changing a colour.** Edit `COLORS`, run `saveConfig()`, then run
+`restyleAll()` until it reports 0 remaining.
+
+**Adding a category.** Add a line to `RULES` with a **new** id — generate one at
+[uuidgenerator.net](https://www.uuidgenerator.net) — and a matching entry in
+`COLORS`. Then `saveConfig()` and `restyleAll()`.
 
 Two things matter here:
 
-- **Order matters.** The first match wins, which is why `Exam review` sits above
-  `Exam`.
+- **Order matters.** The first match wins in `RULES`, which is why `Exam review`
+  sits above `Exam`.
 - **Never edit or reuse an existing id.** It is what links your events to their
   colour.
 
@@ -166,13 +210,13 @@ sync has stopped.
 
 | Setting | What it does |
 | --- | --- |
-| `REMINDER_PROFILE` | `'rules'` (per-category, the default), `'none'`, `'exams-only'`, or `'everything'`. Overrides the reminders set on individual rules |
+| `REMINDER_PROFILE` | `'rules'` (per-category, the default), `'none'`, `'exams-only'`, or `'everything'`. Overrides the `REMINDERS` table |
 
 ### Schedule
 
 | Setting | What it does |
 | --- | --- |
-| `SYNC_TIMES` | When it runs, as `[hour, minute]`. Hours are reliable; minutes land within about 15 minutes. Run `installTrigger()` after changing this |
+| `SYNC_TIMES` | When it runs, as `[hour, minute]`. Hours are reliable; minutes land within about 15 minutes. Run `saveConfig()` and then `installTrigger()` after changing this |
 | `DAYS_AHEAD` | How far into the future to sync |
 | `PAST_SYNC_DAYS` | How far back `syncPast()` reaches |
 
@@ -190,6 +234,9 @@ sync has stopped.
 
 ### Version
 
+These two are deliberately not stored, so an old copy can still learn that it is
+old.
+
 | Setting | What it does |
 | --- | --- |
 | `SCRIPT_VERSION` | Which version you are running |
@@ -204,6 +251,14 @@ sync has stopped.
 | Function | |
 | --- | --- |
 | `setup` | The whole install in one run. Safe to re-run |
+
+### Settings
+
+| Function | |
+| --- | --- |
+| `saveConfig` | Store your current settings so a version upgrade cannot lose them. Run this after any change |
+| `showConfig` | What is stored, and where it differs from the constants in the file |
+| `resetConfig` | Drop the stored settings and go back to the code. Keeps your timetable link and calendar |
 
 ### Everyday
 
@@ -232,7 +287,7 @@ sync has stopped.
 | `restoreDeleted` | Bring back events you deleted, then re-sync |
 | `forceSync` | Sync even if the feed shrank (skips the guard) |
 | `restoreStateFromBackup` | Recover from the backup copy in Drive |
-| `resetSync` | Forget everything. Deletions come back, your per-field edits stop being protected |
+| `resetSync` | Forget the sync memory. Deletions come back, your per-field edits stop being protected. Your settings and calendar are kept |
 
 ---
 
@@ -243,23 +298,33 @@ sync has stopped.
 - Delete a synced event and it stays deleted.
 - Edit one field of an event and only that field stops syncing.
 - Its memory lives in a Drive file, with a backup copy beside it.
+- Its settings live in script properties, so pasting a new version keeps them.
 
 ---
 
 ## Troubleshooting
 
+**My change did nothing.** You have run `saveConfig()` at some point, so the
+stored value is winning over the constant you just edited. Run `showConfig()` to
+confirm, then `saveConfig()` again to store the new value.
+
 **Everything is grey.** No rule matched the activity type. Run
-`listActivityTypes()` to see what TimeEdit is publishing, add lines to `RULES`,
-then run `restyleAll()`.
+`listActivityTypes()` to see what TimeEdit is publishing, add lines to `RULES`
+and `COLORS`, then run `saveConfig()` and `restyleAll()`.
 
 **Colours do nothing.** The Calendar API service is not enabled (step 3). The
 built-in calendar service only knows Google's eleven presets.
 
 **"Could not read your TimeEdit feed (HTTP 410)."** The subscribe link expired.
 TimeEdit rejects one once its date range is fully in the past — regenerate it
-with the range set to the current academic year.
+with the range set to the current academic year. Paste the new one into
+`ICS_URL` and run `saveConfig()`.
 
-**Nothing is updating.** Check `DRY_RUN` is `false`. Then run `verify()`.
+**Nothing is updating.** Check `DRY_RUN` is `false`, and that `showConfig()`
+does not report a stored `dryRun` of `true`. Then run `verify()`.
 
 **The sync stopped and I heard nothing.** Check `EMAIL.failures` is `true`, and
 that `monthlyReport` still has a trigger — run `installTrigger()` to rebuild.
+
+**Syncs run at the wrong times.** Changing `SYNC_TIMES` does not move the
+triggers by itself. Run `saveConfig()`, then `installTrigger()`.

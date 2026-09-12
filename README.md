@@ -86,12 +86,14 @@ Calendar ID. Otherwise leave `CALENDAR_ID` empty.
 
 ### 6. Look at your calendar
 
-Open Google Calendar and hard refresh (Ctrl+Shift+R, or Cmd+Shift+R on a Mac).
-The calendar was created while the page was already open, so it will not appear
-until the page refetches. An empty calendar before that refresh is normal.
+Open Google Calendar and **hard refresh** (Ctrl+Shift+R, or Cmd+Shift+R on a
+Mac). The calendar was created while the page was already open, so it will not
+appear until the page refetches. An empty calendar before that refresh is
+normal, not a sign that something failed.
 
 If something still looks wrong, run `verify()`, it checks the script's memory
-against your calendar and the feed and reports any drift.
+against your calendar and the feed and reports any drift. All four of its counts
+should be 0 on a fresh install.
 
 ### 7. Run `saveConfig()`
 

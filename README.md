@@ -86,8 +86,12 @@ Calendar ID. Otherwise leave `CALENDAR_ID` empty.
 
 ### 6. Look at your calendar
 
-That is it. If something looks wrong, run `verify()`, it checks the script's
-memory against your calendar and the feed and reports any drift.
+Open Google Calendar and hard refresh (Ctrl+Shift+R, or Cmd+Shift+R on a Mac).
+The calendar was created while the page was already open, so it will not appear
+until the page refetches. An empty calendar before that refresh is normal.
+
+If something still looks wrong, run `verify()`, it checks the script's memory
+against your calendar and the feed and reports any drift.
 
 ### 7. Run `saveConfig()`
 
@@ -307,6 +311,12 @@ old.
 **My change did nothing.** You have run `saveConfig()` at some point, so the
 stored value is winning over the constant you just edited. Run `showConfig()` to
 confirm, then `saveConfig()` again to store the new value.
+
+**My calendar is empty / the "Uni" calendar isn't there.** Hard refresh Google
+Calendar (Ctrl+Shift+R). The web client caches the calendar list, so one created
+by the script mid-session does not appear until the page refetches. Check the
+Apps Script execution log first — if `setup()` reported creating events, they
+exist and this is just the stale page.
 
 **Everything is grey.** No rule matched the activity type. Run
 `listActivityTypes()` to see what TimeEdit is publishing, add lines to `RULES`

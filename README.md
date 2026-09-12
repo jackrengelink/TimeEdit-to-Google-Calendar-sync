@@ -4,11 +4,11 @@
 Tired of constantly logging into TimeEdit, or the sync with your Google Calendar
 not having enough features? This is your fix!
 
-Works for every study using TimeEdit, but is configured to Creative Technology. 
-You'll need some extra steps for different studies.
+The program is configured to Creative Technology. 
+You'll need to edit the code for different studies.
 
-A Google Apps Script that turns the University of Twente's TimeEdit timetable
-into real events in a Google Calendar you own.
+It works in a simple Google Apps Script that turns the TimeEdit timetable into
+real events in a Google Calendar you own.
 
 Subscribing TimeEdit to Google Calendar the normal way gives you a read-only
 feed: every event one colour, nothing removable. This creates real events
@@ -23,18 +23,19 @@ instead, which means:
 - you get an email when a room or time actually changes
 
 It runs on Google's servers on a timer. Your laptop does not need to be on.
+Completely autonomous, after you've set it up.
 
 ---
 
 ## Setup
 
-About fifteen minutes, once. Do steps 1–4, then run `setup()` — it does the rest.
+About fifteen minutes, once. Do steps 1–4, then run `setup()`, it does the rest.
 
 ### 1. Create the project
 
 Go to [script.google.com](https://script.google.com), sign in with the Google
 account whose calendar you want this in, and click **New project**. Delete
-everything in `Code.gs` and paste this whole file in its place. Rename the
+everything in `Code.gs` and paste the whole code file in its place. Rename the
 project so you can find it again.
 
 ### 2. Set the timezone
@@ -47,7 +48,7 @@ same zone if Amsterdam is awkward to find. Do not leave it on a UK or US zone.
 In the left sidebar click **Services +**, choose **Calendar API**, leave the
 identifier as `Calendar`, click **Add**.
 
-Custom colours do not work without this — the built-in calendar service only
+Custom colours do not work without this, the built-in calendar service only
 knows Google's eleven presets.
 
 ### 4. Get your timetable link
@@ -55,22 +56,22 @@ knows Google's eleven presets.
 Open [cloud.timeedit.net/nl_utwente/web](https://cloud.timeedit.net/nl_utwente/web)
 and log in. Then:
 
-- Search for your **programme and year as a whole**, not individual courses.
-  Course codes expire every quartile; a programme selection does not.
+- Search for your **Study programme**, not individual courses.
 - Select all four quartiles.
 - Click the date range at the top and set it to the full academic year.
+  (First day of the academic year to the last, or later, I'd suggest august 1st)
 - Click **Subscribe** and copy the URL it gives you.
 
 Paste it into `ICS_URL` near the top of the script.
 
-> **Treat that URL as private.** It needs no password, so anyone holding it can
-> see where you are every hour of the year.
+> **IF YOU DON'T WANT TO BE STALKED** Don't share the link, people will know where
+> you are every hour of the year.
 
 ### 5. Run `setup()`
 
 Ctrl+S, pick `setup` from the function dropdown, click **Run**.
 
-Google will warn that the app is not verified — that is because you are the
+Google will warn that the app is not verified, that is because you are the
 unverified developer of a script you just pasted in yourself. Check that the
 email shown is yours, then **Advanced** → **Go to … (unsafe)** → **Allow**.
 If the email shown is **not** yours, stop.
@@ -85,7 +86,7 @@ Calendar ID. Otherwise leave `CALENDAR_ID` empty.
 
 ### 6. Look at your calendar
 
-That is it. If something looks wrong, run `verify()` — it checks the script's
+That is it. If something looks wrong, run `verify()`, it checks the script's
 memory against your calendar and the feed and reports any drift.
 
 ### Optional

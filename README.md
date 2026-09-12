@@ -263,15 +263,3 @@ with the range set to the current academic year.
 
 **The sync stopped and I heard nothing.** Check `EMAIL.failures` is `true`, and
 that `monthlyReport` still has a trigger — run `installTrigger()` to rebuild.
-
----
-
-## Releasing a new version
-
-`VERSION_URL` points at the raw `VERSION` file in this repo, which contains just
-a version string. Bump that file and `SCRIPT_VERSION` in the script together;
-anyone running an older copy gets told in their monthly email.
-
-Use the `raw.githubusercontent.com` URL, not the `github.com/…/blob/…` one — the
-blob URL returns the whole HTML page, and the check would read `<!DOCTYPE` as the
-latest version number.

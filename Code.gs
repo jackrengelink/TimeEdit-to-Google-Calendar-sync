@@ -335,6 +335,7 @@
       minFeedRatio: MIN_FEED_RATIO,
       maxWritesPerRun: MAX_WRITES_PER_RUN,
       apiRetries: API_RETRIES,
+      digestMaxLines: DIGEST_MAX_LINES,
     };
   }
 
@@ -550,13 +551,19 @@
     // digging through TimeEdit again, and a code paste would take it with it.
     persistLink_();
 
-    const state = loadState();
-    ensureLabels_(state, true);
-    saveState(state);
+    withLock_(() => {
+      const state = loadState();
+      ensureLabels_(state, true);
+      saveState(state);
+    });
     Logger.log('Colour palette installed (%s categories).', rules_().length);
 
     Logger.log('\nRunning the first sync, this can take a minute...');
-    runSync_(false);
+    // Locked like every other sync. Without this, a trigger firing mid-setup
+    // (or a manual syncNow in another tab) runs concurrently: both builds of
+    // the UID index predate the other's inserts, so neither can adopt the
+    // other's events and the feed gets created twice.
+    withLock_(() => runSync_(false));
 
     installTrigger();
 
@@ -1382,7 +1389,9 @@
       created++; writes++;
       changes.created.push(entry_(next.start, tz, next.title,
         next.location ? [next.location] : []));
-      if (isUrgent_(rule)) changes.urgent = true;
+      // Deliberately not urgent. An exam appearing for the first time is the
+      // timetable loading, not an exam moving, and a bulk create (first sync,
+      // restoreDeleted) would otherwise shout about every one of them.
       if (++sinceSave >= 50) flush();
     }
 
@@ -1860,7 +1869,11 @@
   }
 
   // How many entries per section before the rest are summarised as a count.
-  const DIGEST_MAX_LINES = 25;
+  // Matches MAX_WRITES_PER_RUN, so in practice a digest is never truncated:
+  // one run cannot create or cancel more events than it is allowed to write.
+  // Gmail clips a message over roughly 102KB, which is where this stops being
+  // free - at about 300 bytes a row, 200 rows is well under that.
+  const DIGEST_MAX_LINES = 200;
 
   // Section colour, only used by the HTML body.
   const DIGEST_SECTIONS = [
@@ -1895,7 +1908,9 @@
     groups.forEach(g => g.items.sort((a, b) => a.ts - b.ts));
 
     // Put the counts in the subject, so the lock screen already tells you
-    // whether this is worth opening.
+    // whether this is worth opening. The urgent prefix names only the sections
+    // that carry the urgent item, so 59 new lectures beside one moved exam do
+    // not all get announced as an exam change.
     const counts = groups.map(g => g.items.length + ' ' + g.tag).join(', ');
     const subject = (changes.urgent ? 'EXAM CHANGE - ' : 'Timetable - ') + counts;
 
@@ -1907,18 +1922,19 @@
   + 'The rest follows in the next sync.';
 
   function digestText_(groups, truncated) {
+    const max = cfg_().digestMaxLines;
     const out = [];
 
     groups.forEach(g => {
       out.push(g.title.toUpperCase() + '  (' + g.items.length + ')');
       out.push(repeat_('-', 46));
 
-      g.items.slice(0, DIGEST_MAX_LINES).forEach(it => {
+      g.items.slice(0, max).forEach(it => {
         out.push(it.when + '   ' + it.title);
         it.lines.forEach(l => out.push('      ' + l));
       });
 
-      const rest = g.items.length - DIGEST_MAX_LINES;
+      const rest = g.items.length - max;
       if (rest > 0) out.push('... and ' + rest + ' more');
       out.push('');
     });
@@ -1928,8 +1944,10 @@
   }
 
   function digestHtml_(groups, truncated) {
+    const max = cfg_().digestMaxLines;
+
     const body = groups.map(g => {
-      const shown = g.items.slice(0, DIGEST_MAX_LINES).map(it =>
+      const shown = g.items.slice(0, max).map(it =>
           '<tr><td style="padding:8px 0;border-top:1px solid #f1f3f4;">'
         + '<div style="color:#5f6368;font-size:12px;">' + esc_(it.when) + '</div>'
         + '<div style="font-weight:600;">' + esc_(it.title) + '</div>'
@@ -1937,7 +1955,7 @@
             '<div style="color:#5f6368;font-size:13px;">' + esc_(l) + '</div>').join('')
         + '</td></tr>').join('');
 
-      const rest = g.items.length - DIGEST_MAX_LINES;
+      const rest = g.items.length - max;
       const more = rest > 0
         ? '<tr><td style="padding:8px 0;border-top:1px solid #f1f3f4;color:#5f6368;'
         + 'font-size:13px;">and ' + rest + ' more</td></tr>'
